@@ -1,2 +1,7 @@
-term
-informed consent
+category,primary_term,related_terms,use_wildcard
+"Adaptive Trial Design","adaptive trial design","adaptive design,adaptive clinical trial,adaptive study",false
+"Modeling and Simulation","modeling and simulation","model based,simulation based",true
+"Bayesian Approaches","bayesian","bayesian analysis,bayesian design,bayesian model,bayesian approach",false
+"Remote Trials","remote data collection","remote monitoring,remote assessment,remote data",false
+"Decentralized Trials","decentralized trial","decentralized study,decentralized clinical trial,virtual trial",false
+"Pragmatic Design","pragmatic design","pragmatic trial,pragmatic study,pragmatic approach",false
