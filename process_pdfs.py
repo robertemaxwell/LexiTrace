@@ -5,9 +5,13 @@ from pdf_highlighter import highlight_terms_in_pdf
 
 def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
     """Process all PDFs for term counting, context, and highlighting."""
+    # Create timestamped subdirectory
+    timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
+    timestamped_output_dir = os.path.join(output_folder, timestamp)
+    os.makedirs(timestamped_output_dir, exist_ok=True)
+
     lexicon = load_lexicon(lexicon_file)
     results = []
-    os.makedirs(output_folder, exist_ok=True)
 
     for filename in os.listdir(pdf_folder):
         if filename.endswith(".pdf"):
@@ -25,11 +29,11 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
             } for match in matches])
 
             # Highlight terms in the PDF
-            highlighted_pdf_path = os.path.join(output_folder, f"highlighted_{filename}")
+            highlighted_pdf_path = os.path.join(timestamped_output_dir, f"highlighted_{filename}")
             highlight_terms_in_pdf(pdf_path, matches, highlighted_pdf_path)
     
     # Save results to CSV
-    csv_output_path = os.path.join(output_folder, "term_locations_with_context.csv")
+    csv_output_path = os.path.join(timestamped_output_dir, "term_locations_with_context.csv")
     pd.DataFrame(results).to_csv(csv_output_path, index=False)
     print(f"\nTerm location results saved to: {csv_output_path}")
 
