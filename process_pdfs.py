@@ -9,6 +9,76 @@ def format_time(seconds):
     """Format time duration in a human-readable format."""
     return str(timedelta(seconds=round(seconds)))
 
+def generate_innovation_metrics(results_df, total_files):
+    """Generate detailed innovation metrics from the results."""
+    # Files with any innovation
+    files_with_innovation = len(results_df['filename'].unique())
+    innovation_percentage = round((files_with_innovation / total_files * 100), 2)
+    
+    # Category-level statistics
+    category_stats = results_df.groupby('category').agg({
+        'filename': 'nunique',
+        'matched_term': 'count'
+    }).rename(columns={
+        'filename': 'unique_files',
+        'matched_term': 'total_matches'
+    })
+    
+    # Calculate percentages
+    category_stats['percentage_of_files'] = round((category_stats['unique_files'] / total_files * 100), 2)
+    category_stats['matches_per_file'] = round((category_stats['total_matches'] / category_stats['unique_files']), 2)
+    
+    # Calculate co-occurrence matrix
+    file_category_matrix = pd.crosstab(results_df['filename'], results_df['category'])
+    co_occurrence = pd.crosstab(results_df['filename'], results_df['category']).gt(0).astype(int)
+    category_co_occurrence = co_occurrence.T.dot(co_occurrence)
+    
+    # Distribution of innovation categories per file
+    innovation_counts = co_occurrence.sum(axis=1)
+    category_distribution = pd.Series({
+        '1_category': (innovation_counts == 1).sum(),
+        '2_categories': (innovation_counts == 2).sum(),
+        '3_or_more_categories': (innovation_counts >= 3).sum()
+    })
+    category_distribution_pct = round((category_distribution / files_with_innovation * 100), 2)
+    
+    return {
+        'overall_metrics': {
+            'total_files': total_files,
+            'files_with_innovation': files_with_innovation,
+            'innovation_percentage': innovation_percentage,
+            'avg_categories_per_file': round(innovation_counts.mean(), 2)
+        },
+        'category_stats': category_stats,
+        'category_co_occurrence': category_co_occurrence,
+        'category_distribution': pd.DataFrame({
+            'count': category_distribution,
+            'percentage': category_distribution_pct
+        })
+    }
+
+def save_innovation_metrics(metrics, output_dir):
+    """Save innovation metrics to separate CSV files."""
+    # Save overall metrics
+    pd.DataFrame([metrics['overall_metrics']]).to_csv(
+        os.path.join(output_dir, "overall_metrics.csv")
+    )
+    
+    # Save category statistics
+    metrics['category_stats'].to_csv(
+        os.path.join(output_dir, "category_statistics.csv")
+    )
+    
+    # Save co-occurrence matrix
+    metrics['category_co_occurrence'].to_csv(
+        os.path.join(output_dir, "category_co_occurrence.csv")
+    )
+    
+    # Save category distribution
+    metrics['category_distribution'].to_csv(
+        os.path.join(output_dir, "category_distribution.csv")
+    )
+
 def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
     """Process all PDFs for term counting, context, and highlighting."""
     start_time = time.time()
@@ -65,29 +135,30 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
         report_start_time = time.time()
         
         # Save detailed results to CSV
-        csv_output_path = os.path.join(timestamped_output_dir, "term_locations_with_context.csv")
         results_df = pd.DataFrame(results)
+        csv_output_path = os.path.join(timestamped_output_dir, "term_locations_with_context.csv")
         results_df.to_csv(csv_output_path, index=False)
         print(f"Term location results saved to: {csv_output_path}")
 
-        # Generate summary statistics by category
-        summary_stats = results_df.groupby('category').agg({
-            'filename': 'nunique',
-            'matched_term': 'count'
-        }).rename(columns={
-            'filename': 'unique_files',
-            'matched_term': 'total_matches'
-        })
+        # Generate and save innovation metrics
+        print("Generating innovation metrics...")
+        metrics = generate_innovation_metrics(results_df, total_files)
+        save_innovation_metrics(metrics, timestamped_output_dir)
         
-        # Calculate percentage of files containing each category
-        total_files = len(pdf_files)  # Use total PDF files, not just ones with matches
-        summary_stats['percentage_of_files'] = (summary_stats['unique_files'] / total_files * 100).round(2)
+        # Print summary of findings
+        overall = metrics['overall_metrics']
+        print(f"\nInnovation Analysis Summary:")
+        print(f"- {overall['files_with_innovation']} out of {overall['total_files']} files ({overall['innovation_percentage']}%) contain innovative techniques")
+        print(f"- Average number of innovation categories per file: {overall['avg_categories_per_file']}")
         
-        # Save summary statistics
-        summary_path = os.path.join(timestamped_output_dir, "category_summary.csv")
-        summary_stats.to_csv(summary_path)
-        print(f"Category summary statistics saved to: {summary_path}")
-        print(f"Report generation time: {format_time(time.time() - report_start_time)}")
+        # Distribution summary
+        dist = metrics['category_distribution']
+        print("\nDistribution of innovation categories:")
+        for idx, row in dist.iterrows():
+            category_name = idx.replace('_', ' ').capitalize()
+            print(f"- {category_name}: {row['count']} files ({row['percentage']}%)")
+        
+        print(f"\nReport generation time: {format_time(time.time() - report_start_time)}")
     else:
         print("\nNo matches found in any files")
     
