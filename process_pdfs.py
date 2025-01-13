@@ -2,12 +2,80 @@ import os
 import pandas as pd
 import time
 from datetime import timedelta
+import matplotlib.pyplot as plt
+import seaborn as sns
 from term_counter import load_lexicon, process_pdf_for_terms
 from pdf_highlighter import highlight_terms_in_pdf
 
 def format_time(seconds):
     """Format time duration in a human-readable format."""
     return str(timedelta(seconds=round(seconds)))
+
+def create_category_distribution_chart(metrics, output_dir):
+    """Create a bar chart showing the distribution of innovation categories."""
+    plt.figure(figsize=(12, 6))
+    stats = metrics['category_stats']
+    
+    # Create bar chart
+    ax = sns.barplot(x=stats.index, y='percentage_of_files', data=stats)
+    
+    # Customize the chart
+    plt.title('Distribution of Innovation Categories Across Files', pad=20)
+    plt.xlabel('Innovation Category')
+    plt.ylabel('Percentage of Files (%)')
+    plt.xticks(rotation=45, ha='right')
+    
+    # Add value labels on top of bars
+    for i, v in enumerate(stats['percentage_of_files']):
+        ax.text(i, v, f'{v}%', ha='center', va='bottom')
+    
+    # Adjust layout and save
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'category_distribution.png'))
+    plt.close()
+
+def create_co_occurrence_heatmap(metrics, output_dir):
+    """Create a heatmap showing category co-occurrence."""
+    plt.figure(figsize=(10, 8))
+    
+    # Create heatmap
+    sns.heatmap(metrics['category_co_occurrence'], 
+                annot=True, 
+                fmt='d',
+                cmap='YlOrRd',
+                cbar_kws={'label': 'Co-occurrence Count'})
+    
+    plt.title('Innovation Category Co-occurrence Matrix', pad=20)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'category_co_occurrence.png'))
+    plt.close()
+
+def create_innovation_complexity_pie(metrics, output_dir):
+    """Create a pie chart showing the distribution of innovation complexity."""
+    plt.figure(figsize=(10, 8))
+    
+    dist = metrics['category_distribution']
+    labels = [idx.replace('_', ' ').capitalize() for idx in dist.index]
+    
+    plt.pie(dist['percentage'], labels=labels, autopct='%1.1f%%',
+            colors=sns.color_palette('pastel'))
+    plt.title('Distribution of Innovation Complexity\n(Number of Categories per File)')
+    
+    plt.savefig(os.path.join(output_dir, 'innovation_complexity.png'))
+    plt.close()
+
+def create_visualizations(metrics, output_dir):
+    """Create and save all visualization charts."""
+    print("Generating visualization charts...")
+    
+    # Set the style for all plots
+    sns.set_style("whitegrid")
+    plt.rcParams['figure.facecolor'] = 'white'
+    
+    # Create individual charts
+    create_category_distribution_chart(metrics, output_dir)
+    create_co_occurrence_heatmap(metrics, output_dir)
+    create_innovation_complexity_pie(metrics, output_dir)
 
 def generate_innovation_metrics(results_df, total_files):
     """Generate detailed innovation metrics from the results."""
@@ -78,6 +146,9 @@ def save_innovation_metrics(metrics, output_dir):
     metrics['category_distribution'].to_csv(
         os.path.join(output_dir, "category_distribution.csv")
     )
+    
+    # Generate visualizations
+    create_visualizations(metrics, output_dir)
 
 def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
     """Process all PDFs for term counting, context, and highlighting."""
@@ -159,6 +230,10 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
             print(f"- {category_name}: {row['count']} files ({row['percentage']}%)")
         
         print(f"\nReport generation time: {format_time(time.time() - report_start_time)}")
+        print("\nVisualization charts have been saved to the output directory:")
+        print("- category_distribution.png")
+        print("- category_co_occurrence.png")
+        print("- innovation_complexity.png")
     else:
         print("\nNo matches found in any files")
     

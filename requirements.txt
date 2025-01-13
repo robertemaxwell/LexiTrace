@@ -1,2 +1,7 @@
 PyMuPDF
 pandas
+pdfplumber
+fuzzywuzzy
+python-Levenshtein
+matplotlib
+seaborn
