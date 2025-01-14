@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from term_counter import load_lexicon, process_pdf_for_terms, MatchClassifier
 from pdf_highlighter import highlight_terms_in_pdf
+from tqdm import tqdm
+import sys
 
 def format_time(seconds):
     """Format time duration in a human-readable format."""
@@ -213,10 +215,16 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
     
     print(f"\nProcessing {total_files} PDF files...")
     
-    for file_num, filename in enumerate(pdf_files, 1):
+    # Initialize progress bar
+    progress_bar = tqdm(total=total_files, desc="Processing PDFs", unit="file")
+    
+    for filename in pdf_files:
         file_start_time = time.time()
         pdf_path = os.path.join(pdf_folder, filename)
-        print(f"\nProcessing file {file_num}/{total_files}: {filename}")
+        
+        # Update progress bar description with current file and elapsed time
+        elapsed = time.time() - start_time
+        progress_bar.set_description(f"Processing {filename} (Elapsed: {format_time(elapsed)})")
 
         # Count terms and track context
         matches = process_pdf_for_terms(pdf_path, lexicon_terms, threshold)
@@ -231,12 +239,18 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
             # Only create highlighted PDF if there are matches
             highlighted_pdf_path = os.path.join(timestamped_output_dir, f"highlighted_{filename}")
             highlight_terms_in_pdf(pdf_path, matches, highlighted_pdf_path)
-            print(f"Created highlighted PDF with {len(matches)} matches")
+            progress_bar.write(f"Created highlighted PDF with {len(matches)} matches")
         else:
-            print(f"No matches found in {filename}")
+            progress_bar.write(f"No matches found in {filename}")
         
         file_duration = time.time() - file_start_time
-        print(f"File processing time: {format_time(file_duration)}")
+        progress_bar.write(f"File processing time: {format_time(file_duration)}")
+        
+        # Update progress bar
+        progress_bar.update(1)
+    
+    # Close progress bar
+    progress_bar.close()
     
     # Only create output files if there are any results
     if results:
