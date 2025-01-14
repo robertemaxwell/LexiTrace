@@ -1,7 +1,24 @@
 category,primary_term,related_terms,use_wildcard
-"Adaptive Trial Design","adaptive trial design","adaptive design,adaptive clinical trial,adaptive study",false
-"Modeling and Simulation","modeling and simulation","model based,simulation based",true
-"Bayesian Approaches","bayesian","bayesian analysis,bayesian design,bayesian model,bayesian approach",false
-"Remote Trials","remote data collection","remote monitoring,remote assessment,remote data",false
-"Decentralized Trials","decentralized trial","decentralized study,decentralized clinical trial,virtual trial",false
-"Pragmatic Design","pragmatic design","pragmatic trial,pragmatic study,pragmatic approach",false
+"Adaptive Trial Design","adaptive trial design","adaptive design,adaptive clinical trial,adaptive study,adaptive randomization,adaptive allocation,adaptive sample size,adaptive dose finding",false
+"Modeling and Simulation","modeling and simulation","model based,simulation based,pharmacometric,in silico,mathematical model,predictive modeling,population modeling,pkpd modeling",true
+"Bayesian Approaches","bayesian","bayesian analysis,bayesian design,bayesian model,bayesian approach,bayesian inference,bayesian statistics,bayesian optimization,bayesian adaptive",false
+"Remote Trials","remote data collection","remote monitoring,remote assessment,remote data,telemedicine,virtual visit,remote consent,remote recruitment,remote followup",false
+"Decentralized Trials","decentralized trial","decentralized study,decentralized clinical trial,virtual trial,site-less trial,hybrid trial,direct to patient,home-based trial",false
+"Pragmatic Design","pragmatic design","pragmatic trial,pragmatic study,pragmatic approach,real world setting,effectiveness trial,routine clinical practice,comparative effectiveness",false
+"Master Protocols","master protocol","basket trial,umbrella trial,platform trial,multi-arm trial,adaptive platform,multi-intervention,complex innovative design",false
+"Real World Evidence","real world evidence","real world data,pragmatic real world,observational study,registry trial,claims data,electronic health record,chart review,natural experiment",false
+"Digital Endpoints","digital endpoint","digital biomarker,wearable device,sensor based,mobile health,digital measure,connected device,digital assessment,remote monitoring device",true
+"Synthetic Control Arms","synthetic control","external control,historical control arm,synthetic data,matched control,propensity score,real world control,external comparator",false
+"AI/ML Applications","artificial intelligence","machine learning,predictive algorithm,deep learning,natural language processing,computer vision,neural network,automated analysis,predictive modeling",true
+"Patient Centricity","patient centric","patient centered,patient reported outcome,patient engagement,patient preference,patient voice,patient experience,shared decision making,patient focused",false
+"Novel Randomization","adaptive randomization","response adaptive,covariate adaptive,dynamic allocation,minimization,stratified random,balanced allocation,risk adaptive",false
+"Enrichment Design","enrichment strategy","biomarker enrichment,adaptive enrichment,predictive enrichment,prognostic enrichment,targeted therapy,precision medicine,stratified medicine",false
+"Seamless Design","seamless trial","phase 2/3,combined phase,adaptive seamless,multi-stage,operationally seamless,inferentially seamless,phase transition",false
+"Novel Endpoints","surrogate endpoint","composite endpoint,novel biomarker,innovative outcome,patient generated,digital outcome,alternative endpoint,time to event",false
+"Innovative Recruitment","innovative recruitment","social media recruitment,digital recruitment,precision recruitment,targeted enrollment,community engagement,direct to patient outreach",true
+"Risk Based Monitoring","risk based monitoring","targeted monitoring,remote monitoring,centralized monitoring,adaptive monitoring,quality by design,key risk indicator",false
+"Adaptive Enrichment","adaptive enrichment","biomarker adaptive,population enrichment,subgroup selection,adaptive population,precision enrollment",false
+"Innovative Consent","electronic consent","econsent,multimedia consent,interactive consent,remote consent,digital consent,dynamic consent",true
+"Novel Statistical Methods","innovative statistics","estimand framework,multiple comparison,complex innovative,advanced analytics,novel design",true
+"Precision Medicine Trials","precision medicine","personalized medicine,targeted therapy,biomarker driven,molecular profiling,stratified medicine",false
+"Hybrid Trials","hybrid trial","mixed design,hybrid protocol,flexible trial,adaptable design,site flexible",false

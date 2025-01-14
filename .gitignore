@@ -60,3 +60,6 @@ output/*
 # Zip directory
 zips/*
 !zips/.gitkeep
+
+# Lexicon backup
+lexicon_bak.csv
