@@ -12,6 +12,18 @@ from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+def create_output_directories(base_dir):
+    """Create organized subdirectories for different output types."""
+    dirs = {
+        'png': os.path.join(base_dir, 'visualizations'),
+        'csv': os.path.join(base_dir, 'data'),
+        'pdf': os.path.join(base_dir, 'highlighted_pdfs'),
+        'report': os.path.join(base_dir, 'report')
+    }
+    for dir_path in dirs.values():
+        os.makedirs(dir_path, exist_ok=True)
+    return dirs
+
 def format_time(seconds):
     """Format time duration in a human-readable format."""
     return str(timedelta(seconds=round(seconds)))
@@ -36,7 +48,7 @@ def create_category_distribution_chart(metrics, output_dir):
     
     # Adjust layout and save
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, 'category_distribution.png'))
+    plt.savefig(os.path.join(output_dir['png'], 'category_distribution.png'))
     plt.close()
 
 def create_co_occurrence_heatmap(metrics, output_dir):
@@ -52,7 +64,7 @@ def create_co_occurrence_heatmap(metrics, output_dir):
     
     plt.title('Innovation Category Co-occurrence Matrix', pad=20)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, 'category_co_occurrence.png'))
+    plt.savefig(os.path.join(output_dir['png'], 'category_co_occurrence.png'))
     plt.close()
 
 def create_innovation_complexity_pie(metrics, output_dir):
@@ -66,7 +78,7 @@ def create_innovation_complexity_pie(metrics, output_dir):
             colors=sns.color_palette('pastel'))
     plt.title('Distribution of Innovation Complexity\n(Number of Categories per File)')
     
-    plt.savefig(os.path.join(output_dir, 'innovation_complexity.png'))
+    plt.savefig(os.path.join(output_dir['png'], 'innovation_complexity.png'))
     plt.close()
 
 def create_term_type_distribution(classifier, output_dir):
@@ -100,7 +112,7 @@ def create_term_type_distribution(classifier, output_dir):
             plt.text(i, primary[i] + related[i]/2, str(related[i]), ha='center', va='center')
     
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, 'term_type_distribution.png'))
+    plt.savefig(os.path.join(output_dir['png'], 'term_type_distribution.png'))
     plt.close()
 
 def create_visualizations(metrics, classifier, output_dir):
@@ -121,12 +133,12 @@ def save_classification_results(classifier, output_dir):
     """Save detailed classification results to CSV files."""
     # Save category statistics
     stats_df = classifier.get_category_statistics()
-    stats_df.to_csv(os.path.join(output_dir, "detailed_category_statistics.csv"))
+    stats_df.to_csv(os.path.join(output_dir['csv'], "detailed_category_statistics.csv"))
     
     # Save innovation patterns
     patterns_df = classifier.get_innovation_patterns()
     if not patterns_df.empty:
-        patterns_df.to_csv(os.path.join(output_dir, "innovation_patterns.csv"), index=False)
+        patterns_df.to_csv(os.path.join(output_dir['csv'], "innovation_patterns.csv"), index=False)
 
 def generate_innovation_metrics(results_df, total_files):
     """Generate detailed innovation metrics from the results."""
@@ -180,22 +192,22 @@ def save_innovation_metrics(metrics, output_dir):
     """Save innovation metrics to separate CSV files."""
     # Save overall metrics
     pd.DataFrame([metrics['overall_metrics']]).to_csv(
-        os.path.join(output_dir, "overall_metrics.csv")
+        os.path.join(output_dir['csv'], "overall_metrics.csv")
     )
     
     # Save category statistics
     metrics['category_stats'].to_csv(
-        os.path.join(output_dir, "category_statistics.csv")
+        os.path.join(output_dir['csv'], "category_statistics.csv")
     )
     
     # Save co-occurrence matrix
     metrics['category_co_occurrence'].to_csv(
-        os.path.join(output_dir, "category_co_occurrence.csv")
+        os.path.join(output_dir['csv'], "category_co_occurrence.csv")
     )
     
     # Save category distribution
     metrics['category_distribution'].to_csv(
-        os.path.join(output_dir, "category_distribution.csv")
+        os.path.join(output_dir['csv'], "category_distribution.csv")
     )
 
 def create_analysis_word_document(metrics, classifier, output_dir, timestamp):
@@ -225,7 +237,7 @@ def create_analysis_word_document(metrics, classifier, output_dir, timestamp):
     
     # Category Distribution
     doc.add_heading('Category Distribution', level=2)
-    img_path = os.path.join(output_dir, 'category_distribution.png')
+    img_path = os.path.join(output_dir['png'], 'category_distribution.png')
     if os.path.exists(img_path):
         doc.add_picture(img_path, width=Inches(6))
         doc.add_paragraph('Figure 1: Distribution of Innovation Categories Across Files')
@@ -251,21 +263,21 @@ def create_analysis_word_document(metrics, classifier, output_dir, timestamp):
     
     # Co-occurrence Analysis
     doc.add_heading('Innovation Co-occurrence Analysis', level=2)
-    img_path = os.path.join(output_dir, 'category_co_occurrence.png')
+    img_path = os.path.join(output_dir['png'], 'category_co_occurrence.png')
     if os.path.exists(img_path):
         doc.add_picture(img_path, width=Inches(6))
         doc.add_paragraph('Figure 2: Innovation Category Co-occurrence Matrix')
     
     # Innovation Complexity
     doc.add_heading('Innovation Complexity Analysis', level=2)
-    img_path = os.path.join(output_dir, 'innovation_complexity.png')
+    img_path = os.path.join(output_dir['png'], 'innovation_complexity.png')
     if os.path.exists(img_path):
         doc.add_picture(img_path, width=Inches(6))
         doc.add_paragraph('Figure 3: Distribution of Innovation Complexity')
     
     # Term Type Distribution
     doc.add_heading('Term Type Distribution', level=2)
-    img_path = os.path.join(output_dir, 'term_type_distribution.png')
+    img_path = os.path.join(output_dir['png'], 'term_type_distribution.png')
     if os.path.exists(img_path):
         doc.add_picture(img_path, width=Inches(6))
         doc.add_paragraph('Figure 4: Distribution of Primary vs Related Terms by Category')
@@ -288,18 +300,17 @@ def create_analysis_word_document(metrics, classifier, output_dir, timestamp):
     # Generated Files
     doc.add_heading('Generated Analysis Files', level=1)
     files_section = doc.add_paragraph()
-    files_section.add_run('CSV Files:\n').bold = True
-    csv_files = [f for f in os.listdir(output_dir) if f.endswith('.csv')]
-    for file in csv_files:
-        files_section.add_run(f"• {file}\n")
     
-    files_section.add_run('\nVisualization Files:\n').bold = True
-    png_files = [f for f in os.listdir(output_dir) if f.endswith('.png')]
-    for file in png_files:
-        files_section.add_run(f"• {file}\n")
+    # List files by directory
+    for dir_type, dir_path in output_dir.items():
+        if dir_type != 'report':  # Skip report directory in listing
+            files_section.add_run(f'\n{dir_type.upper()} Files:\n').bold = True
+            files = [f for f in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, f))]
+            for file in sorted(files):
+                files_section.add_run(f"• {file}\n")
     
     # Save the document
-    doc_path = os.path.join(output_dir, 'innovation_analysis_report.docx')
+    doc_path = os.path.join(output_dir['report'], 'innovation_analysis_report.docx')
     doc.save(doc_path)
     return doc_path
 
@@ -311,6 +322,9 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
     timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
     timestamped_output_dir = os.path.join(output_folder, timestamp)
     os.makedirs(timestamped_output_dir, exist_ok=True)
+    
+    # Create organized subdirectories
+    output_dirs = create_output_directories(timestamped_output_dir)
 
     print(f"\nLoading lexicon from {lexicon_file}...")
     lexicon_load_start = time.time()
@@ -345,7 +359,7 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
             results.extend(matches)
 
             # Only create highlighted PDF if there are matches
-            highlighted_pdf_path = os.path.join(timestamped_output_dir, f"highlighted_{filename}")
+            highlighted_pdf_path = os.path.join(output_dirs['pdf'], f"highlighted_{filename}")
             highlight_terms_in_pdf(pdf_path, matches, highlighted_pdf_path)
             progress_bar.write(f"Created highlighted PDF with {len(matches)} matches")
         else:
@@ -370,24 +384,24 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
         
         # Save detailed results to CSV
         results_df = pd.DataFrame(results)
-        csv_output_path = os.path.join(timestamped_output_dir, "term_locations_with_context.csv")
+        csv_output_path = os.path.join(output_dirs['csv'], "term_locations_with_context.csv")
         results_df.to_csv(csv_output_path, index=False)
         print(f"Term location results saved to: {csv_output_path}")
 
         # Generate and save innovation metrics
         print("Generating innovation metrics...")
         metrics = generate_innovation_metrics(results_df, total_files)
-        save_innovation_metrics(metrics, timestamped_output_dir)
+        save_innovation_metrics(metrics, output_dirs)
         
         # Save classification results
-        save_classification_results(classifier, timestamped_output_dir)
+        save_classification_results(classifier, output_dirs)
         
         # Create visualizations
-        create_visualizations(metrics, classifier, timestamped_output_dir)
+        create_visualizations(metrics, classifier, output_dirs)
         
         # Generate Word document report
         print("\nGenerating Word document report...")
-        doc_path = create_analysis_word_document(metrics, classifier, timestamped_output_dir, timestamp)
+        doc_path = create_analysis_word_document(metrics, classifier, output_dirs, timestamp)
         print(f"Analysis report saved to: {doc_path}")
         
         # Print summary of findings
@@ -413,11 +427,11 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
             print(f"- Most common terms: {', '.join(list(row['most_common_terms'].keys())[:3])}")
         
         print(f"\nReport generation time: {format_time(time.time() - report_start_time)}")
-        print("\nVisualization charts have been saved to the output directory:")
-        print("- category_distribution.png")
-        print("- category_co_occurrence.png")
-        print("- innovation_complexity.png")
-        print("- term_type_distribution.png")
+        print("\nOutput files have been organized into the following directories:")
+        print(f"- Visualizations: {output_dirs['png']}")
+        print(f"- Data files: {output_dirs['csv']}")
+        print(f"- Highlighted PDFs: {output_dirs['pdf']}")
+        print(f"- Analysis report: {output_dirs['report']}")
     else:
         print("\nNo matches found in any files")
     
