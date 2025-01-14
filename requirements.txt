@@ -6,3 +6,4 @@ python-Levenshtein
 matplotlib
 seaborn
 tqdm
+python-docx

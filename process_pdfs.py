@@ -8,6 +8,9 @@ from term_counter import load_lexicon, process_pdf_for_terms, MatchClassifier
 from pdf_highlighter import highlight_terms_in_pdf
 from tqdm import tqdm
 import sys
+from docx import Document
+from docx.shared import Inches, Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 def format_time(seconds):
     """Format time duration in a human-readable format."""
@@ -195,6 +198,111 @@ def save_innovation_metrics(metrics, output_dir):
         os.path.join(output_dir, "category_distribution.csv")
     )
 
+def create_analysis_word_document(metrics, classifier, output_dir, timestamp):
+    """Create a detailed Word document summarizing the analysis results."""
+    doc = Document()
+    
+    # Title
+    title = doc.add_heading('Clinical Trial Innovation Analysis Report', 0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    # Add timestamp
+    doc.add_paragraph(f'Analysis Date: {timestamp}')
+    doc.add_paragraph()
+    
+    # Executive Summary
+    doc.add_heading('Executive Summary', level=1)
+    overall = metrics['overall_metrics']
+    summary = doc.add_paragraph()
+    summary.add_run('Analysis Overview:\n').bold = True
+    summary.add_run(f"• {overall['files_with_innovation']} out of {overall['total_files']} files ({overall['innovation_percentage']}%) contain innovative techniques\n")
+    summary.add_run(f"• Average innovation categories per file: {overall['avg_categories_per_file']}\n")
+    summary.add_run(f"• Analysis includes {len(metrics['category_stats'])} innovation categories\n")
+    doc.add_paragraph()
+    
+    # Innovation Categories Analysis
+    doc.add_heading('Innovation Categories Analysis', level=1)
+    
+    # Category Distribution
+    doc.add_heading('Category Distribution', level=2)
+    img_path = os.path.join(output_dir, 'category_distribution.png')
+    if os.path.exists(img_path):
+        doc.add_picture(img_path, width=Inches(6))
+        doc.add_paragraph('Figure 1: Distribution of Innovation Categories Across Files')
+    
+    # Add category statistics table
+    doc.add_heading('Category Statistics', level=2)
+    stats = metrics['category_stats']
+    table = doc.add_table(rows=1, cols=4)
+    table.style = 'Table Grid'
+    header_cells = table.rows[0].cells
+    headers = ['Category', 'Files', '% of Total', 'Matches/File']
+    for i, header in enumerate(headers):
+        header_cells[i].text = header
+    
+    for category, row in stats.iterrows():
+        row_cells = table.add_row().cells
+        row_cells[0].text = category
+        row_cells[1].text = str(row['unique_files'])
+        row_cells[2].text = f"{row['percentage_of_files']}%"
+        row_cells[3].text = str(row['matches_per_file'])
+    
+    doc.add_paragraph()
+    
+    # Co-occurrence Analysis
+    doc.add_heading('Innovation Co-occurrence Analysis', level=2)
+    img_path = os.path.join(output_dir, 'category_co_occurrence.png')
+    if os.path.exists(img_path):
+        doc.add_picture(img_path, width=Inches(6))
+        doc.add_paragraph('Figure 2: Innovation Category Co-occurrence Matrix')
+    
+    # Innovation Complexity
+    doc.add_heading('Innovation Complexity Analysis', level=2)
+    img_path = os.path.join(output_dir, 'innovation_complexity.png')
+    if os.path.exists(img_path):
+        doc.add_picture(img_path, width=Inches(6))
+        doc.add_paragraph('Figure 3: Distribution of Innovation Complexity')
+    
+    # Term Type Distribution
+    doc.add_heading('Term Type Distribution', level=2)
+    img_path = os.path.join(output_dir, 'term_type_distribution.png')
+    if os.path.exists(img_path):
+        doc.add_picture(img_path, width=Inches(6))
+        doc.add_paragraph('Figure 4: Distribution of Primary vs Related Terms by Category')
+    
+    # Detailed Category Analysis
+    doc.add_heading('Detailed Category Analysis', level=1)
+    stats = classifier.get_category_statistics()
+    for _, row in stats.iterrows():
+        doc.add_heading(row['category'], level=2)
+        p = doc.add_paragraph()
+        p.add_run('Primary Term Matches: ').bold = True
+        p.add_run(f"{row['primary_term_matches']}\n")
+        p.add_run('Related Term Matches: ').bold = True
+        p.add_run(f"{row['related_term_matches']}\n")
+        p.add_run('Most Common Terms: ').bold = True
+        common_terms = list(row['most_common_terms'].keys())[:5]
+        p.add_run(', '.join(common_terms))
+        doc.add_paragraph()
+    
+    # Generated Files
+    doc.add_heading('Generated Analysis Files', level=1)
+    files_section = doc.add_paragraph()
+    files_section.add_run('CSV Files:\n').bold = True
+    csv_files = [f for f in os.listdir(output_dir) if f.endswith('.csv')]
+    for file in csv_files:
+        files_section.add_run(f"• {file}\n")
+    
+    files_section.add_run('\nVisualization Files:\n').bold = True
+    png_files = [f for f in os.listdir(output_dir) if f.endswith('.png')]
+    for file in png_files:
+        files_section.add_run(f"• {file}\n")
+    
+    # Save the document
+    doc_path = os.path.join(output_dir, 'innovation_analysis_report.docx')
+    doc.save(doc_path)
+    return doc_path
+
 def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
     """Process all PDFs for term counting, context, and highlighting."""
     start_time = time.time()
@@ -274,8 +382,13 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
         # Save classification results
         save_classification_results(classifier, timestamped_output_dir)
         
-        # Create visualizations with both metrics and classifier data
+        # Create visualizations
         create_visualizations(metrics, classifier, timestamped_output_dir)
+        
+        # Generate Word document report
+        print("\nGenerating Word document report...")
+        doc_path = create_analysis_word_document(metrics, classifier, timestamped_output_dir, timestamp)
+        print(f"Analysis report saved to: {doc_path}")
         
         # Print summary of findings
         overall = metrics['overall_metrics']
