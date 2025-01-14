@@ -56,3 +56,7 @@ clinical_trials/*
 # Output
 output/*
 !output/.gitkeep
+
+# Zip directory
+zips/*
+!zips/.gitkeep
