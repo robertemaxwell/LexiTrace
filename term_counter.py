@@ -219,21 +219,76 @@ def is_valid_match(text: str, match: re.Match, min_context_length: int = 20) -> 
     return True
 
 def fuzzy_find_terms_in_text(page_number: int, text: str, lexicon_terms: List[LexiconTerm], threshold: int = 85) -> List[Dict[str, Any]]:
-    """Find and record occurrences of lexicon terms on a specific page."""
+    """Find and record occurrences of lexicon terms on a specific page using efficient methods."""
     matches = []
     
+    # If text is empty, return immediately
+    if not text:
+        return matches
+    
+    # Group lexicon terms by pattern type to avoid multiple regex scans
+    wildcard_terms = []
+    exact_terms = []
+    
     for lexicon_term in lexicon_terms:
-        # Use pre-compiled patterns for each term
+        if lexicon_term.use_wildcard:
+            wildcard_terms.append(lexicon_term)
+        else:
+            exact_terms.append(lexicon_term)
+    
+    # Process exact matches first (these can be optimized)
+    if exact_terms:
+        # Build a combined pattern for all exact terms to scan text only once
+        all_term_patterns = {}
+        for term in exact_terms:
+            all_term_patterns.update(term.patterns)
+        
+        # Dictionary to map compiled patterns back to their terms
+        pattern_to_term = {}
+        for term in exact_terms:
+            for pattern_key, pattern in term.patterns.items():
+                pattern_to_term[pattern] = term
+        
+        # Use a single pass over the text for all patterns
+        for pattern in pattern_to_term:
+            for match in pattern.finditer(text):
+                # Validate the match
+                if is_valid_match(text, match):
+                    matched_text = match.group()
+                    term = pattern_to_term[pattern]
+                    
+                    # For each pattern, find the term it came from
+                    for term_text, term_pattern in term.patterns.items():
+                        if term_pattern == pattern:
+                            # For non-wildcard terms, verify fuzzy match score
+                            if fuzz.ratio(term_text.lower(), matched_text.lower()) < threshold:
+                                continue
+                            
+                            # Get expanded context
+                            context = get_surrounding_context(text, match.start(), match.end())
+                            
+                            # Classify the match
+                            term_type, parent_term = term.classify_match(matched_text)
+                            
+                            matches.append({
+                                "category": term.category,
+                                "primary_term": term.primary_term,
+                                "matched_term": matched_text,
+                                "term_type": term_type,
+                                "parent_term": parent_term,
+                                "page": page_number,
+                                "line_number": text[:match.start()].count('\n') + 1,
+                                "context": context
+                            })
+                            break
+    
+    # Process wildcard terms (these are harder to optimize)
+    for lexicon_term in wildcard_terms:
         for term, pattern in lexicon_term.patterns.items():
             for match in pattern.finditer(text):
                 # Validate the match
                 if is_valid_match(text, match):
                     matched_text = match.group()
-                    
-                    # For non-wildcard terms, verify fuzzy match score
-                    if not lexicon_term.use_wildcard:
-                        if fuzz.ratio(term.lower(), matched_text.lower()) < threshold:
-                            continue
                     
                     # Get expanded context
                     context = get_surrounding_context(text, match.start(), match.end())

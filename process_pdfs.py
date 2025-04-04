@@ -11,6 +11,9 @@ import sys
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+import multiprocessing
+import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 def create_output_directories(base_dir):
     """Create organized subdirectories for different output types."""
@@ -143,15 +146,15 @@ def save_classification_results(classifier, output_dir):
 def generate_innovation_metrics(results_df, total_files):
     """Generate detailed innovation metrics from the results."""
     # Files with any innovation
-    files_with_innovation = len(results_df['filename'].unique())
+    files_with_innovation = len(results_df['rel_path'].unique())
     innovation_percentage = round((files_with_innovation / total_files * 100), 2)
     
     # Category-level statistics
     category_stats = results_df.groupby('category').agg({
-        'filename': 'nunique',
+        'rel_path': 'nunique',
         'matched_term': 'count'
     }).rename(columns={
-        'filename': 'unique_files',
+        'rel_path': 'unique_files',
         'matched_term': 'total_matches'
     })
     
@@ -160,8 +163,8 @@ def generate_innovation_metrics(results_df, total_files):
     category_stats['matches_per_file'] = round((category_stats['total_matches'] / category_stats['unique_files']), 2)
     
     # Calculate co-occurrence matrix
-    file_category_matrix = pd.crosstab(results_df['filename'], results_df['category'])
-    co_occurrence = pd.crosstab(results_df['filename'], results_df['category']).gt(0).astype(int)
+    file_category_matrix = pd.crosstab(results_df['rel_path'], results_df['category'])
+    co_occurrence = pd.crosstab(results_df['rel_path'], results_df['category']).gt(0).astype(int)
     category_co_occurrence = co_occurrence.T.dot(co_occurrence)
     
     # Distribution of innovation categories per file
@@ -230,6 +233,7 @@ def create_analysis_word_document(metrics, classifier, output_dir, timestamp):
     summary.add_run(f"• {overall['files_with_innovation']} out of {overall['total_files']} files ({overall['innovation_percentage']}%) contain innovative techniques\n")
     summary.add_run(f"• Average innovation categories per file: {overall['avg_categories_per_file']}\n")
     summary.add_run(f"• Analysis includes {len(metrics['category_stats'])} innovation categories\n")
+    summary.add_run(f"• Files were processed recursively from all subdirectories\n")
     doc.add_paragraph()
     
     # Innovation Categories Analysis
@@ -314,9 +318,51 @@ def create_analysis_word_document(metrics, classifier, output_dir, timestamp):
     doc.save(doc_path)
     return doc_path
 
-def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
+def process_single_pdf(args):
+    """Process a single PDF file and return the results."""
+    pdf_path, rel_path, filename, lexicon_terms, threshold = args
+    
+    file_start_time = time.time()
+    results = []
+    
+    # Count terms and track context
+    matches = process_pdf_for_terms(pdf_path, lexicon_terms, threshold)
+    
+    # Only process and add results if there are matches
+    if matches:
+        # Add filename and relative path to each match
+        for match in matches:
+            match["filename"] = filename
+            match["rel_path"] = rel_path
+        results = matches
+        
+        file_duration = time.time() - file_start_time
+        return {
+            "matches": results,
+            "rel_path": rel_path,
+            "has_matches": True,
+            "match_count": len(matches),
+            "duration": file_duration
+        }
+    else:
+        file_duration = time.time() - file_start_time
+        return {
+            "matches": [],
+            "rel_path": rel_path,
+            "has_matches": False,
+            "match_count": 0,
+            "duration": file_duration
+        }
+
+def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85, workers=None):
     """Process all PDFs for term counting, context, and highlighting."""
     start_time = time.time()
+    
+    # Set default number of workers if not specified
+    if workers is None:
+        workers = max(1, multiprocessing.cpu_count() - 1)
+        
+    print(f"Using {workers} worker processes for parallel processing")
     
     # Create timestamped subdirectory
     timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
@@ -331,59 +377,81 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
     lexicon_terms = load_lexicon(lexicon_file)
     print(f"Loaded {len(lexicon_terms)} lexicon terms in {format_time(time.time() - lexicon_load_start)}")
     
-    results = []
-    pdf_files = [f for f in os.listdir(pdf_folder) if f.endswith(".pdf")]
+    all_results = []
+    
+    # Walk through all subdirectories to find PDF files
+    pdf_files = []
+    for root, _, files in os.walk(pdf_folder):
+        for filename in files:
+            if filename.endswith(".pdf"):
+                # Store the full path and the relative path for later use
+                full_path = os.path.join(root, filename)
+                rel_path = os.path.relpath(full_path, pdf_folder)
+                pdf_files.append((full_path, rel_path, filename))
+    
     total_files = len(pdf_files)
     
-    print(f"\nProcessing {total_files} PDF files...")
+    print(f"\nProcessing {total_files} PDF files from {pdf_folder} and its subdirectories...")
+    
+    # Create processing tasks
+    processing_tasks = [(pdf_path, rel_path, filename, lexicon_terms, threshold) 
+                        for pdf_path, rel_path, filename in pdf_files]
     
     # Initialize progress bar
     progress_bar = tqdm(total=total_files, desc="Processing PDFs", unit="file")
     
-    for filename in pdf_files:
-        file_start_time = time.time()
-        pdf_path = os.path.join(pdf_folder, filename)
+    # Use ProcessPoolExecutor for parallel processing
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(process_single_pdf, task): task for task in processing_tasks}
         
-        # Update progress bar description with current file and elapsed time
-        elapsed = time.time() - start_time
-        progress_bar.set_description(f"Processing {filename} (Elapsed: {format_time(elapsed)})")
-
-        # Count terms and track context
-        matches = process_pdf_for_terms(pdf_path, lexicon_terms, threshold)
-        
-        # Only process and extend results if there are matches
-        if matches:
-            # Add filename to each match
-            for match in matches:
-                match["filename"] = filename
-            results.extend(matches)
-
-            # Only create highlighted PDF if there are matches
-            highlighted_pdf_path = os.path.join(output_dirs['pdf'], f"highlighted_{filename}")
-            highlight_terms_in_pdf(pdf_path, matches, highlighted_pdf_path)
-            progress_bar.write(f"Created highlighted PDF with {len(matches)} matches")
-        else:
-            progress_bar.write(f"No matches found in {filename}")
-        
-        file_duration = time.time() - file_start_time
-        progress_bar.write(f"File processing time: {format_time(file_duration)}")
-        
-        # Update progress bar
-        progress_bar.update(1)
+        for future in as_completed(futures):
+            result = future.result()
+            rel_path = result["rel_path"]
+            
+            # Update progress bar description with current file and elapsed time
+            elapsed = time.time() - start_time
+            progress_bar.set_description(f"Processed {rel_path} (Elapsed: {format_time(elapsed)})")
+            
+            if result["has_matches"]:
+                all_results.extend(result["matches"])
+                
+                # Extract data needed for highlighting
+                pdf_path = futures[future][0]
+                filename = futures[future][2]
+                matches = result["matches"]
+                
+                # Create highlighted PDF
+                rel_dir = os.path.dirname(rel_path)
+                if rel_dir:
+                    highlighted_pdf_dir = os.path.join(output_dirs['pdf'], rel_dir)
+                    os.makedirs(highlighted_pdf_dir, exist_ok=True)
+                    highlighted_pdf_path = os.path.join(highlighted_pdf_dir, f"highlighted_{filename}")
+                else:
+                    highlighted_pdf_path = os.path.join(output_dirs['pdf'], f"highlighted_{filename}")
+                    
+                highlight_terms_in_pdf(pdf_path, matches, highlighted_pdf_path)
+                progress_bar.write(f"Created highlighted PDF with {result['match_count']} matches")
+            else:
+                progress_bar.write(f"No matches found in {rel_path}")
+            
+            progress_bar.write(f"File processing time: {format_time(result['duration'])}")
+            
+            # Update progress bar
+            progress_bar.update(1)
     
     # Close progress bar
     progress_bar.close()
     
     # Only create output files if there are any results
-    if results:
+    if all_results:
         print("\nGenerating reports...")
         report_start_time = time.time()
         
         # Create classifier instance
-        classifier = MatchClassifier(results)
+        classifier = MatchClassifier(all_results)
         
         # Save detailed results to CSV
-        results_df = pd.DataFrame(results)
+        results_df = pd.DataFrame(all_results)
         csv_output_path = os.path.join(output_dirs['csv'], "term_locations_with_context.csv")
         results_df.to_csv(csv_output_path, index=False)
         print(f"Term location results saved to: {csv_output_path}")
@@ -409,6 +477,7 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
         print(f"\nInnovation Analysis Summary:")
         print(f"- {overall['files_with_innovation']} out of {overall['total_files']} files ({overall['innovation_percentage']}%) contain innovative techniques")
         print(f"- Average number of innovation categories per file: {overall['avg_categories_per_file']}")
+        print(f"- Files were processed recursively from {pdf_folder} and all its subdirectories")
         
         # Distribution summary
         dist = metrics['category_distribution']
@@ -440,14 +509,13 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85):
     print(f"Average time per file: {format_time(total_duration/total_files)}")
 
 if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) != 4:
-        print("Usage: python process_pdfs.py <pdf_folder> <lexicon_file> <output_folder>")
-        sys.exit(1)
-
-    pdf_folder = sys.argv[1]
-    lexicon_file = sys.argv[2]
-    output_folder = sys.argv[3]
-
-    process_all_pdfs(pdf_folder, lexicon_file, output_folder)
+    parser = argparse.ArgumentParser(description="Process PDFs for term counting, context, and highlighting")
+    parser.add_argument("pdf_folder", help="Folder containing PDF files to process")
+    parser.add_argument("lexicon_file", help="CSV file containing lexicon terms to match")
+    parser.add_argument("output_folder", help="Folder for outputting results")
+    parser.add_argument("--threshold", type=int, default=85, help="Matching threshold (default: 85)")
+    parser.add_argument("--workers", type=int, help="Number of worker processes for parallel processing")
+    
+    args = parser.parse_args()
+    
+    process_all_pdfs(args.pdf_folder, args.lexicon_file, args.output_folder, args.threshold, args.workers)
