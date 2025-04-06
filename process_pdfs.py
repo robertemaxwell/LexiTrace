@@ -149,6 +149,10 @@ def generate_innovation_metrics(results_df, total_files):
     files_with_innovation = len(results_df['rel_path'].unique())
     innovation_percentage = round((files_with_innovation / total_files * 100), 2)
     
+    # Trial ID information
+    trial_ids = results_df['trial_id'].unique()
+    files_by_trial = results_df.groupby('trial_id')['rel_path'].nunique()
+    
     # Category-level statistics
     category_stats = results_df.groupby('category').agg({
         'rel_path': 'nunique',
@@ -181,14 +185,16 @@ def generate_innovation_metrics(results_df, total_files):
             'total_files': total_files,
             'files_with_innovation': files_with_innovation,
             'innovation_percentage': innovation_percentage,
-            'avg_categories_per_file': round(innovation_counts.mean(), 2)
+            'avg_categories_per_file': round(innovation_counts.mean(), 2),
+            'unique_trial_ids': len(trial_ids)
         },
         'category_stats': category_stats,
         'category_co_occurrence': category_co_occurrence,
         'category_distribution': pd.DataFrame({
             'count': category_distribution,
             'percentage': category_distribution_pct
-        })
+        }),
+        'trial_stats': files_by_trial
     }
 
 def save_innovation_metrics(metrics, output_dir):
@@ -212,6 +218,11 @@ def save_innovation_metrics(metrics, output_dir):
     metrics['category_distribution'].to_csv(
         os.path.join(output_dir['csv'], "category_distribution.csv")
     )
+    
+    # Save trial ID statistics
+    metrics['trial_stats'].to_csv(
+        os.path.join(output_dir['csv'], "trial_id_statistics.csv")
+    )
 
 def create_analysis_word_document(metrics, classifier, output_dir, timestamp):
     """Create a detailed Word document summarizing the analysis results."""
@@ -233,8 +244,27 @@ def create_analysis_word_document(metrics, classifier, output_dir, timestamp):
     summary.add_run(f"• {overall['files_with_innovation']} out of {overall['total_files']} files ({overall['innovation_percentage']}%) contain innovative techniques\n")
     summary.add_run(f"• Average innovation categories per file: {overall['avg_categories_per_file']}\n")
     summary.add_run(f"• Analysis includes {len(metrics['category_stats'])} innovation categories\n")
+    summary.add_run(f"• Unique clinical trial IDs in analysis: {overall['unique_trial_ids']}\n")
     summary.add_run(f"• Files were processed recursively from all subdirectories\n")
     doc.add_paragraph()
+    
+    # Trial ID Summary
+    if 'trial_stats' in metrics and not metrics['trial_stats'].empty:
+        doc.add_heading('Clinical Trial ID Summary', level=1)
+        table = doc.add_table(rows=1, cols=2)
+        table.style = 'Table Grid'
+        header_cells = table.rows[0].cells
+        headers = ['Trial ID', 'Number of Files']
+        for i, header in enumerate(headers):
+            header_cells[i].text = header
+        
+        for trial_id, file_count in metrics['trial_stats'].items():
+            if pd.notnull(trial_id): # Skip None/NaN trial IDs
+                row_cells = table.add_row().cells
+                row_cells[0].text = str(trial_id)
+                row_cells[1].text = str(file_count)
+        
+        doc.add_paragraph()
     
     # Innovation Categories Analysis
     doc.add_heading('Innovation Categories Analysis', level=1)
@@ -322,6 +352,14 @@ def process_single_pdf(args):
     """Process a single PDF file and return the results."""
     pdf_path, rel_path, filename, lexicon_terms, threshold = args
     
+    # Extract trial ID from the path (e.g., NCT04261244)
+    trial_id = None
+    path_parts = pdf_path.split(os.sep)
+    for part in path_parts:
+        if part.startswith("NCT"):
+            trial_id = part
+            break
+    
     file_start_time = time.time()
     results = []
     
@@ -330,16 +368,18 @@ def process_single_pdf(args):
     
     # Only process and add results if there are matches
     if matches:
-        # Add filename and relative path to each match
+        # Add filename, relative path, and trial ID to each match
         for match in matches:
             match["filename"] = filename
             match["rel_path"] = rel_path
+            match["trial_id"] = trial_id
         results = matches
         
         file_duration = time.time() - file_start_time
         return {
             "matches": results,
             "rel_path": rel_path,
+            "trial_id": trial_id,
             "has_matches": True,
             "match_count": len(matches),
             "duration": file_duration
@@ -349,6 +389,7 @@ def process_single_pdf(args):
         return {
             "matches": [],
             "rel_path": rel_path,
+            "trial_id": trial_id,
             "has_matches": False,
             "match_count": 0,
             "duration": file_duration
@@ -419,6 +460,7 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85, work
                 pdf_path = futures[future][0]
                 filename = futures[future][2]
                 matches = result["matches"]
+                trial_id = result["trial_id"]
                 
                 # Create highlighted PDF
                 rel_dir = os.path.dirname(rel_path)
@@ -427,7 +469,13 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85, work
                     os.makedirs(highlighted_pdf_dir, exist_ok=True)
                     highlighted_pdf_path = os.path.join(highlighted_pdf_dir, f"highlighted_{filename}")
                 else:
-                    highlighted_pdf_path = os.path.join(output_dirs['pdf'], f"highlighted_{filename}")
+                    # If trial ID was extracted, create a directory for it
+                    if trial_id:
+                        highlighted_pdf_dir = os.path.join(output_dirs['pdf'], trial_id)
+                        os.makedirs(highlighted_pdf_dir, exist_ok=True)
+                        highlighted_pdf_path = os.path.join(highlighted_pdf_dir, f"highlighted_{filename}")
+                    else:
+                        highlighted_pdf_path = os.path.join(output_dirs['pdf'], f"highlighted_{filename}")
                     
                 highlight_terms_in_pdf(pdf_path, matches, highlighted_pdf_path)
                 progress_bar.write(f"Created highlighted PDF with {result['match_count']} matches")
@@ -478,6 +526,7 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85, work
         print(f"- {overall['files_with_innovation']} out of {overall['total_files']} files ({overall['innovation_percentage']}%) contain innovative techniques")
         print(f"- Average number of innovation categories per file: {overall['avg_categories_per_file']}")
         print(f"- Files were processed recursively from {pdf_folder} and all its subdirectories")
+        print(f"- Unique clinical trial IDs identified: {overall['unique_trial_ids']}")
         
         # Distribution summary
         dist = metrics['category_distribution']
@@ -485,6 +534,14 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85, work
         for idx, row in dist.iterrows():
             category_name = idx.replace('_', ' ').capitalize()
             print(f"- {category_name}: {row['count']} files ({row['percentage']}%)")
+        
+        # Trial ID summary
+        if 'trial_stats' in metrics and not metrics['trial_stats'].empty:
+            print("\nTop clinical trials by file count:")
+            top_trials = metrics['trial_stats'].sort_values(ascending=False).head(5)
+            for trial_id, count in top_trials.items():
+                if pd.notnull(trial_id):  # Skip None/NaN trial IDs
+                    print(f"- {trial_id}: {count} files")
         
         # Term type distribution summary
         stats = classifier.get_category_statistics()

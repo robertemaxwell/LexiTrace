@@ -19,6 +19,10 @@ def clear_directory(directory):
 def download_single_file(args):
     """Download a single file from S3."""
     s3, bucket_name, file_key, local_file_path = args
+    
+    # Create directory structure if needed
+    os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+    
     print(f"Downloading {file_key} to {local_file_path}")
     s3.download_file(bucket_name, file_key, local_file_path)
     return file_key
@@ -34,15 +38,19 @@ def download_from_s3(bucket_name, local_dir, max_workers=None):
     # Clear the local directory first
     clear_directory(local_dir)
     
-    # List objects in the bucket
-    response = s3.list_objects_v2(Bucket=bucket_name)
+    # List objects in the bucket - use pagination to handle large buckets
+    paginator = s3.get_paginator('list_objects_v2')
     
     download_tasks = []
-    if 'Contents' in response:
-        for obj in response['Contents']:
-            file_key = obj['Key']
-            local_file_path = os.path.join(local_dir, os.path.basename(file_key))
-            download_tasks.append((s3, bucket_name, file_key, local_file_path))
+    for page in paginator.paginate(Bucket=bucket_name):
+        if 'Contents' in page:
+            for obj in page['Contents']:
+                file_key = obj['Key']
+                # Preserve full path structure
+                local_file_path = os.path.join(local_dir, file_key)
+                download_tasks.append((s3, bucket_name, file_key, local_file_path))
+    
+    print(f"Found {len(download_tasks)} files to download")
     
     # Use ThreadPoolExecutor for parallel downloads (better for I/O bound operations)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -55,6 +63,8 @@ def download_from_s3(bucket_name, local_dir, max_workers=None):
                 print(f"Successfully downloaded {file_key}")
             except Exception as e:
                 print(f"Error downloading file: {e}")
+    
+    print(f"Download complete - {len(download_tasks)} files downloaded to {local_dir}")
 
 def upload_single_file(args):
     """Upload a single file to S3."""
@@ -75,9 +85,11 @@ def upload_to_s3(local_dir, bucket_name, max_workers=None):
     for root, dirs, files in os.walk(local_dir):
         for file in files:
             local_file_path = os.path.join(root, file)
-            # Create S3 key (path within the bucket)
-            s3_key = os.path.join(os.path.relpath(root, start=os.path.dirname(local_dir)), file)
+            # Create S3 key (path within the bucket) that preserves directory structure
+            s3_key = os.path.relpath(local_file_path, start=os.path.dirname(local_dir))
             upload_tasks.append((s3, local_file_path, bucket_name, s3_key))
+    
+    print(f"Found {len(upload_tasks)} files to upload")
     
     # Use ThreadPoolExecutor for parallel uploads (better for I/O bound operations)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -90,6 +102,8 @@ def upload_to_s3(local_dir, bucket_name, max_workers=None):
                 print(f"Successfully uploaded to {s3_key}")
             except Exception as e:
                 print(f"Error uploading file: {e}")
+    
+    print(f"Upload complete - {len(upload_tasks)} files uploaded to s3://{bucket_name}")
 
 def run_lexitrace(lexicon_file="lexicon.csv", num_workers=None):
     """Run the LexiTrace processing script."""
