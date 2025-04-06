@@ -6,6 +6,7 @@ import boto3
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import multiprocessing
+import requests
 
 def clear_directory(directory):
     """Clear all files in the specified directory."""
@@ -131,6 +132,7 @@ def main():
     parser.add_argument("--lexicon-file", default="lexicon.csv", help="Lexicon file for term matching (default: lexicon.csv)")
     parser.add_argument("--workers", type=int, help="Number of worker processes for parallel processing")
     parser.add_argument("--s3-workers", type=int, help="Number of worker threads for S3 transfers")
+    parser.add_argument("--auto-shutdown", action="store_true", help="Automatically shutdown EC2 instance after completion")
     args = parser.parse_args()
     
     # Ensure output directory exists
@@ -149,6 +151,23 @@ def main():
     upload_to_s3("output", args.output_bucket, args.s3_workers)
     
     print("Processing complete!")
+    
+    # Auto-shutdown if requested
+    if args.auto_shutdown:
+        print("Auto-shutdown enabled - shutting down instance...")
+        # Use boto3 to get instance ID and shut down
+        try:
+            # Get instance ID from EC2 metadata service
+            response = requests.get('http://169.254.169.254/latest/meta-data/instance-id', timeout=2)
+            instance_id = response.text
+            
+            # Create EC2 client and stop the instance
+            ec2 = boto3.client('ec2')
+            ec2.stop_instances(InstanceIds=[instance_id])
+            print(f"Successfully initiated shutdown for instance {instance_id}")
+        except Exception as e:
+            print(f"Error during auto-shutdown: {e}")
+            print("Please manually stop your instance to avoid unnecessary charges")
 
 if __name__ == "__main__":
     main()

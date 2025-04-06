@@ -8,3 +8,4 @@ seaborn
 tqdm
 python-docx
 boto3
+requests
