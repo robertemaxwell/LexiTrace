@@ -7,6 +7,39 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import multiprocessing
 import requests
+import warnings
+import logging
+
+# Configure logging to filter out PDF warnings
+class PDFWarningFilter(logging.Filter):
+    def filter(self, record):
+        # Skip common PDF warnings that don't affect functionality
+        pdf_warnings = [
+            "Ignoring (part of) ToUnicode map",
+            "CropBox missing from /Page",
+            "Invalid CMap",
+            "Corrupt JPEG data"
+        ]
+        
+        if any(warning in record.getMessage() for warning in pdf_warnings):
+            return False
+        return True
+
+# Set up logging configuration
+def configure_logging():
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    
+    # Add filter to console handler
+    console_handler = logging.StreamHandler()
+    console_handler.addFilter(PDFWarningFilter())
+    root_logger.addHandler(console_handler)
+    
+    # Also use warnings module to filter common PDF warnings
+    warnings.filterwarnings("ignore", message=".*ToUnicode map.*")
+    warnings.filterwarnings("ignore", message=".*CropBox missing.*")
+    warnings.filterwarnings("ignore", message=".*Invalid CMap.*")
+    warnings.filterwarnings("ignore", message=".*Corrupt JPEG data.*")
 
 def clear_directory(directory):
     """Clear all files in the specified directory."""
@@ -126,6 +159,9 @@ def run_lexitrace(lexicon_file="lexicon.csv", num_workers=None):
     ], check=True)
 
 def main():
+    # Configure logging to filter PDF warnings
+    configure_logging()
+    
     parser = argparse.ArgumentParser(description="Run LexiTrace with S3 integration")
     parser.add_argument("--input-bucket", required=True, help="S3 bucket for input data")
     parser.add_argument("--output-bucket", required=True, help="S3 bucket for output results")

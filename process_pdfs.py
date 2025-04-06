@@ -14,6 +14,39 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 import multiprocessing
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import warnings
+import logging
+
+# Configure logging to filter out PDF warnings
+class PDFWarningFilter(logging.Filter):
+    def filter(self, record):
+        # Skip common PDF warnings that don't affect functionality
+        pdf_warnings = [
+            "Ignoring (part of) ToUnicode map",
+            "CropBox missing from /Page",
+            "Invalid CMap",
+            "Corrupt JPEG data"
+        ]
+        
+        if any(warning in record.getMessage() for warning in pdf_warnings):
+            return False
+        return True
+
+# Set up logging configuration
+def configure_logging():
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    
+    # Add filter to console handler
+    console_handler = logging.StreamHandler()
+    console_handler.addFilter(PDFWarningFilter())
+    root_logger.addHandler(console_handler)
+    
+    # Also use warnings module to filter common PDF warnings
+    warnings.filterwarnings("ignore", message=".*ToUnicode map.*")
+    warnings.filterwarnings("ignore", message=".*CropBox missing.*")
+    warnings.filterwarnings("ignore", message=".*Invalid CMap.*")
+    warnings.filterwarnings("ignore", message=".*Corrupt JPEG data.*")
 
 def create_output_directories(base_dir):
     """Create organized subdirectories for different output types."""
@@ -397,6 +430,9 @@ def process_single_pdf(args):
 
 def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85, workers=None):
     """Process all PDFs for term counting, context, and highlighting."""
+    # Configure logging to filter PDF warnings
+    configure_logging()
+    
     start_time = time.time()
     
     # Set default number of workers if not specified
@@ -566,6 +602,9 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85, work
     print(f"Average time per file: {format_time(total_duration/total_files)}")
 
 if __name__ == "__main__":
+    # Configure logging to filter PDF warnings
+    configure_logging()
+    
     parser = argparse.ArgumentParser(description="Process PDFs for term counting, context, and highlighting")
     parser.add_argument("pdf_folder", help="Folder containing PDF files to process")
     parser.add_argument("lexicon_file", help="CSV file containing lexicon terms to match")
