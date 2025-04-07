@@ -196,23 +196,24 @@ def run_lexitrace(lexicon_file="lexicon.csv", num_workers=None):
         num_workers = max(1, multiprocessing.cpu_count() - 1)
     
     try:
-        # Run in debug mode to see all output
-        result = subprocess.run([
+        # Run in real-time output mode (no capture) for better visibility
+        cmd = [
             sys.executable,  # Use the same Python interpreter
             "process_pdfs.py",
             "clinical_trials",  # pdf_folder - where we downloaded input files
             lexicon_file,       # lexicon_file - from parameter
             "output",           # output_folder - where results should go
-            "--workers", str(num_workers)  # number of parallel workers
-        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            "--workers", str(num_workers),  # number of parallel workers
+            "--verbose"         # enable detailed logging
+        ]
         
-        print(result.stdout)
+        print(f"Running command: {' '.join(cmd)}")
+        result = subprocess.run(cmd, check=True)
+        
         return True
     except subprocess.CalledProcessError as e:
         print("Error running process_pdfs.py:")
         print(f"Exit code: {e.returncode}")
-        print(f"Standard output: {e.stdout}")
-        print(f"Standard error: {e.stderr}")
         return False
 
 def main():
@@ -220,13 +221,14 @@ def main():
     configure_logging()
     
     parser = argparse.ArgumentParser(description="Run LexiTrace with S3 integration")
-    parser.add_argument("--input-bucket", required=True, help="S3 bucket for input data")
-    parser.add_argument("--output-bucket", required=True, help="S3 bucket for output results")
+    parser.add_argument("--input-bucket", help="S3 bucket for input data")
+    parser.add_argument("--output-bucket", help="S3 bucket for output results") 
     parser.add_argument("--lexicon-file", default="lexicon.csv", help="Lexicon file for term matching (default: lexicon.csv)")
     parser.add_argument("--workers", type=int, help="Number of worker processes for parallel processing")
     parser.add_argument("--s3-workers", type=int, help="Number of worker threads for S3 transfers")
     parser.add_argument("--auto-shutdown", action="store_true", help="Automatically shutdown EC2 instance after completion")
     parser.add_argument("--skip-dependency-check", action="store_true", help="Skip checking and installing dependencies")
+    parser.add_argument("--local", action="store_true", help="Run in local mode without S3 (uses local clinical_trials directory)")
     args = parser.parse_args()
     
     # Check dependencies first
@@ -241,15 +243,38 @@ def main():
     # Ensure clinical_trials directory exists
     os.makedirs("clinical_trials", exist_ok=True)
     
-    # Download data from S3
-    download_from_s3(args.input_bucket, "clinical_trials", args.s3_workers)
+    # Check if we're running in local mode
+    if args.local:
+        print("Running in local mode - skipping S3 download")
+        # Count PDF files in clinical_trials directory
+        pdf_count = 0
+        for root, _, files in os.walk("clinical_trials"):
+            for file in files:
+                if file.lower().endswith(".pdf"):
+                    pdf_count += 1
+        
+        if pdf_count == 0:
+            print("No PDF files found in clinical_trials directory!")
+            print("Please add PDF files to the clinical_trials directory before running.")
+            return 1
+            
+        print(f"Found {pdf_count} PDF files in clinical_trials directory")
+    else:
+        # Require S3 buckets if not in local mode
+        if not args.input_bucket or not args.output_bucket:
+            print("Error: --input-bucket and --output-bucket are required unless running in --local mode")
+            return 1
+            
+        # Download data from S3
+        download_from_s3(args.input_bucket, "clinical_trials", args.s3_workers)
     
     # Run LexiTrace processing
     success = run_lexitrace(args.lexicon_file, args.workers)
     
     if success:
-        # Upload results to S3
-        upload_to_s3("output", args.output_bucket, args.s3_workers)
+        # Upload results to S3 if not in local mode
+        if not args.local and args.output_bucket:
+            upload_to_s3("output", args.output_bucket, args.s3_workers)
         
         print("Processing complete!")
         

@@ -37,8 +37,13 @@ def configure_logging():
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
     
-    # Add filter to console handler
+    # Remove existing handlers to avoid duplicates
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    
+    # Add filter to console handler with formatting
     console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
     console_handler.addFilter(PDFWarningFilter())
     root_logger.addHandler(console_handler)
     
@@ -385,6 +390,9 @@ def process_single_pdf(args):
     """Process a single PDF file and return the results."""
     pdf_path, rel_path, filename, lexicon_terms, threshold = args
     
+    # Log file processing start
+    logging.debug(f"Starting to process {rel_path}")
+    
     # Extract trial ID from the path (e.g., NCT04261244)
     trial_id = None
     path_parts = pdf_path.split(os.sep)
@@ -396,36 +404,51 @@ def process_single_pdf(args):
     file_start_time = time.time()
     results = []
     
-    # Count terms and track context
-    matches = process_pdf_for_terms(pdf_path, lexicon_terms, threshold)
-    
-    # Only process and add results if there are matches
-    if matches:
-        # Add filename, relative path, and trial ID to each match
-        for match in matches:
-            match["filename"] = filename
-            match["rel_path"] = rel_path
-            match["trial_id"] = trial_id
-        results = matches
+    try:
+        # Count terms and track context
+        logging.debug(f"Analyzing {rel_path} for terms...")
+        matches = process_pdf_for_terms(pdf_path, lexicon_terms, threshold)
         
-        file_duration = time.time() - file_start_time
-        return {
-            "matches": results,
-            "rel_path": rel_path,
-            "trial_id": trial_id,
-            "has_matches": True,
-            "match_count": len(matches),
-            "duration": file_duration
-        }
-    else:
-        file_duration = time.time() - file_start_time
+        # Only process and add results if there are matches
+        if matches:
+            # Add filename, relative path, and trial ID to each match
+            for match in matches:
+                match["filename"] = filename
+                match["rel_path"] = rel_path
+                match["trial_id"] = trial_id
+            results = matches
+            
+            file_duration = time.time() - file_start_time
+            logging.debug(f"Completed {rel_path} in {format_time(file_duration)} - found {len(matches)} matches")
+            return {
+                "matches": results,
+                "rel_path": rel_path,
+                "trial_id": trial_id,
+                "has_matches": True,
+                "match_count": len(matches),
+                "duration": file_duration
+            }
+        else:
+            file_duration = time.time() - file_start_time
+            logging.debug(f"Completed {rel_path} in {format_time(file_duration)} - no matches found")
+            return {
+                "matches": [],
+                "rel_path": rel_path,
+                "trial_id": trial_id,
+                "has_matches": False,
+                "match_count": 0,
+                "duration": file_duration
+            }
+    except Exception as e:
+        logging.error(f"Error processing {rel_path}: {str(e)}")
         return {
             "matches": [],
             "rel_path": rel_path,
             "trial_id": trial_id,
             "has_matches": False,
             "match_count": 0,
-            "duration": file_duration
+            "duration": time.time() - file_start_time,
+            "error": str(e)
         }
 
 def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85, workers=None):
@@ -435,7 +458,7 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85, work
     
     start_time = time.time()
     
-    # Set default number of workers if not specified
+    # Set default number of workers if not specified (use CPU count)
     if workers is None:
         workers = max(1, multiprocessing.cpu_count() - 1)
         
@@ -455,6 +478,7 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85, work
     print(f"Loaded {len(lexicon_terms)} lexicon terms in {format_time(time.time() - lexicon_load_start)}")
     
     all_results = []
+    errors = []
     
     # Walk through all subdirectories to find PDF files
     pdf_files = []
@@ -482,43 +506,61 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85, work
         futures = {executor.submit(process_single_pdf, task): task for task in processing_tasks}
         
         for future in as_completed(futures):
-            result = future.result()
-            rel_path = result["rel_path"]
-            
-            # Update progress bar description with current file and elapsed time
-            elapsed = time.time() - start_time
-            progress_bar.set_description(f"Processed {rel_path} (Elapsed: {format_time(elapsed)})")
-            
-            if result["has_matches"]:
-                all_results.extend(result["matches"])
+            try:
+                result = future.result()
+                rel_path = result["rel_path"]
                 
-                # Extract data needed for highlighting
-                pdf_path = futures[future][0]
-                filename = futures[future][2]
-                matches = result["matches"]
-                trial_id = result["trial_id"]
+                # Update progress bar description with current file and elapsed time
+                elapsed = time.time() - start_time
+                progress_bar.set_description(f"Processed {rel_path} (Elapsed: {format_time(elapsed)})")
                 
-                # Create highlighted PDF
-                rel_dir = os.path.dirname(rel_path)
-                if rel_dir:
-                    highlighted_pdf_dir = os.path.join(output_dirs['pdf'], rel_dir)
-                    os.makedirs(highlighted_pdf_dir, exist_ok=True)
-                    highlighted_pdf_path = os.path.join(highlighted_pdf_dir, f"highlighted_{filename}")
-                else:
-                    # If trial ID was extracted, create a directory for it
-                    if trial_id:
-                        highlighted_pdf_dir = os.path.join(output_dirs['pdf'], trial_id)
+                # Check if there was an error
+                if "error" in result:
+                    error_msg = f"Error in {rel_path}: {result['error']}"
+                    errors.append(error_msg)
+                    progress_bar.write(error_msg)
+                    continue
+                
+                if result["has_matches"]:
+                    all_results.extend(result["matches"])
+                    
+                    # Extract data needed for highlighting
+                    pdf_path = futures[future][0]
+                    filename = futures[future][2]
+                    matches = result["matches"]
+                    trial_id = result["trial_id"]
+                    
+                    # Create highlighted PDF
+                    rel_dir = os.path.dirname(rel_path)
+                    if rel_dir:
+                        highlighted_pdf_dir = os.path.join(output_dirs['pdf'], rel_dir)
                         os.makedirs(highlighted_pdf_dir, exist_ok=True)
                         highlighted_pdf_path = os.path.join(highlighted_pdf_dir, f"highlighted_{filename}")
                     else:
-                        highlighted_pdf_path = os.path.join(output_dirs['pdf'], f"highlighted_{filename}")
-                    
-                highlight_terms_in_pdf(pdf_path, matches, highlighted_pdf_path)
-                progress_bar.write(f"Created highlighted PDF with {result['match_count']} matches")
-            else:
-                progress_bar.write(f"No matches found in {rel_path}")
-            
-            progress_bar.write(f"File processing time: {format_time(result['duration'])}")
+                        # If trial ID was extracted, create a directory for it
+                        if trial_id:
+                            highlighted_pdf_dir = os.path.join(output_dirs['pdf'], trial_id)
+                            os.makedirs(highlighted_pdf_dir, exist_ok=True)
+                            highlighted_pdf_path = os.path.join(highlighted_pdf_dir, f"highlighted_{filename}")
+                        else:
+                            highlighted_pdf_path = os.path.join(output_dirs['pdf'], f"highlighted_{filename}")
+                        
+                    try:
+                        highlight_terms_in_pdf(pdf_path, matches, highlighted_pdf_path)
+                        progress_bar.write(f"Created highlighted PDF with {result['match_count']} matches")
+                    except Exception as e:
+                        error_msg = f"Error highlighting {rel_path}: {str(e)}"
+                        errors.append(error_msg)
+                        progress_bar.write(error_msg)
+                else:
+                    progress_bar.write(f"No matches found in {rel_path}")
+                
+                progress_bar.write(f"File processing time: {format_time(result['duration'])}")
+            except Exception as e:
+                pdf_path = futures[future][1] if future in futures else "unknown"
+                error_msg = f"Failed to process file {pdf_path}: {str(e)}"
+                errors.append(error_msg)
+                progress_bar.write(error_msg)
             
             # Update progress bar
             progress_bar.update(1)
@@ -526,6 +568,21 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85, work
     # Close progress bar
     progress_bar.close()
     
+    # Print summary of errors if any
+    if errors:
+        print(f"\nEncountered {len(errors)} errors during processing:")
+        for i, error in enumerate(errors[:10], 1):  # Show only first 10 errors
+            print(f"{i}. {error}")
+        if len(errors) > 10:
+            print(f"... and {len(errors) - 10} more errors")
+        
+        # Save errors to file
+        error_file = os.path.join(output_dirs['csv'], "processing_errors.txt")
+        with open(error_file, 'w') as f:
+            for error in errors:
+                f.write(f"{error}\n")
+        print(f"Full error list saved to {error_file}")
+        
     # Only create output files if there are any results
     if all_results:
         print("\nGenerating reports...")
@@ -599,7 +656,13 @@ def process_all_pdfs(pdf_folder, lexicon_file, output_folder, threshold=85, work
     
     total_duration = time.time() - start_time
     print(f"\nTotal processing time: {format_time(total_duration)}")
-    print(f"Average time per file: {format_time(total_duration/total_files)}")
+    # Add check to avoid division by zero
+    if total_files > 0:
+        print(f"Average time per file: {format_time(total_duration/total_files)}")
+    else:
+        print("No files were processed.")
+        print("Please check that the PDF files exist in the provided directory.")
+        print(f"Directory path: {os.path.abspath(pdf_folder)}")
 
 if __name__ == "__main__":
     # Configure logging to filter PDF warnings
@@ -611,7 +674,13 @@ if __name__ == "__main__":
     parser.add_argument("output_folder", help="Folder for outputting results")
     parser.add_argument("--threshold", type=int, default=85, help="Matching threshold (default: 85)")
     parser.add_argument("--workers", type=int, help="Number of worker processes for parallel processing")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
     
     args = parser.parse_args()
+    
+    # Set logging level based on verbosity
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+        print("Verbose mode enabled - showing detailed progress information")
     
     process_all_pdfs(args.pdf_folder, args.lexicon_file, args.output_folder, args.threshold, args.workers)
