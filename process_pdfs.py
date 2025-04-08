@@ -25,7 +25,8 @@ class PDFWarningFilter(logging.Filter):
             "Ignoring (part of) ToUnicode map",
             "CropBox missing from /Page",
             "Invalid CMap",
-            "Corrupt JPEG data"
+            "Corrupt JPEG data",
+            "The start and end byte have different lengths"
         ]
         
         if any(warning in record.getMessage() for warning in pdf_warnings):
